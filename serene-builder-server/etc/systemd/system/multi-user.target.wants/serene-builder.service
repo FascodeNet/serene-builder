@@ -1,0 +1,8 @@
+[Unit]
+Description=serene-builder pipe
+After=systemd-nspawn@serenelinux.service
+Requires=systemd-nspawn@serenelinux.service
+
+[Service]
+ExecStart=/usr/share/serenebuilder/pipe.sh
+Restart=always

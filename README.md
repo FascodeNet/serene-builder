@@ -5,7 +5,7 @@
 ### 構成
 
 SereneLinuxのnspawnコンテナのマシンA
-Ubuntu18.04のnspawnコンテナのマシンB
+Ubuntu18.04のdockerコンテナのマシンB
 Debian 10のホストマシン
 の場合とします。
 
@@ -65,8 +65,26 @@ apt-get -y install ~/share/base-files-*
 mv base-files-* /srv/www
 
 ~/serene-devtools/make-installlist.py > ~/share/install_list
-echo "1" > /tmp/pipe_sl
+rsync -av /etc/ ~/share/rootfs/etc
+rsync -av /var/ ~/share/rootfs/var
+~/serene-devtools/personaldaterremover.py
+
+echo "1" > /tmp/pipe_sl #Send request about build iso
 if [[ "$(cat /tmp/pipe_sl)" == error ]]; then
     echo "Error!\ncannot dist iso" 1>&2; exit 1
 fi
+```
+
+#### 3.マシンBの準備
+
+- Ubuntu18.04 bionicのコンテナを用意します。
+- 今回はDockerを使用します。
+
+Dockerfile
+
+```docker
+FROM ubuntu:18.04
+RUN apt-get update \
+&& apt-get -y upgrade \
+COPY base-files-10.1ubuntu2.7
 ```
