@@ -1,15 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# 確認
-if [ $UID != 0 ]; then
-    echo "Rootユーザもしくはsudo権限を持ったユーザで実行する必要があります" 1>&2
-    exit 1
-fi
+# エラー発生時に中断
+set -e
 
-# 設定ファイルの読み込み
-# $WORKDIR $EXCLUDES $LIVEUSER $LIVECDLABEL $CUSTOMISO $SQUASHFSOPTS
-# $BACKUPSHOWINSTALL $LIVECDURL $DISTICONS $DISTLOCALE $DISTNAME $TERMINALSOFT
-. /etc/serenebuilder.conf
+# 未定義変数を参照時に中断
+# set -u
+
+# デバッグモード
+# set -x
+
 
 # 変数の定義
 ARCH=amd64
@@ -22,43 +21,76 @@ serenebuilderVERSION="1.0"
 OPT1="dist"
 LIVEUSER="$(echo ${LIVEUSER} | awk {print tolower ($0)})"
 
+
+# 確認
+if [ $UID != 0 ]; then
+    echo "Rootユーザもしくはsudo権限を持ったユーザで実行する必要があります" 1>&2
+    exit 1
+fi
+
+
+# エラー
+# error [エラー内容] <終了コード>
+error() {
+    echo -e "[Builder]: ${1}" >&2
+    echo -e "[Eror]: ${@}" >>${WORKDIR}/serenebuilder.log
+    if [[ -n ${2} ]]; then
+        exit ${2}
+    fi
+}
+
+# ログと画面に出力
+# log [ログ内容]
+log_msg() {
+    echo -e "[Builder]: ${@}"
+    echo -e "[INFO]: ${@}" >>${WORKDIR}/serenebuilder.log
+}
+
+# ログに出力
+log_only() {
+    echo -e "[INFO]: ${@}" >>${WORKDIR}/serenebuilder.log
+}
+
+
+# 設定ファイルの読み込み
+# $WORKDIR $EXCLUDES $LIVEUSER $LIVECDLABEL $CUSTOMISO $SQUASHFSOPTS
+# $BACKUPSHOWINSTALL $LIVECDURL $DISTICONS $DISTLOCALE $DISTNAME
+if [[ -f /etc/serenebuilder.conf ]]; then
+    source /etc/serenebuilder.conf
+else
+    error "設定ファイルがありません。" 1
+fi
+
+
 # 作業ディレクトリの存在確認
 if [ ! -d ${WORKDIR} ] ; then
     mkdir -p ${WORKDIR}
     if [ ! -d ${WORKDIR} ] ; then
-      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-      echo "! 作業ディレクトリの作成が出来ませんでした !"
-      echo "!     ${WORKDIR} !"
-      echo "! Serene-Builderを終了します               !"
-      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-      exit 1
+      error "! 作業ディレクトリ[${WORKDIR}]の作成が出来ませんでした !" 1
     fi
+else
+    error '作業ディレクトリが既に存在しています。' 1
 fi
+
 
 # 移動
 cd ${WORKDIR}
 
+
 # ログファイルの作成
 if [ -f ${WORKDIR}/serenebuilder.log ] ; then
-    echo -e "\n\n\n\n== serenebuilder.log file already exists\n== not removing log file, just adding to it\n" >> ${WORKDIR}/serenebuilder.log
+    log_only "\n\n\n\n== serenebuilder.log file already exists\n== not removing log file, just adding to it\n"
 fi
 
-touch ${WORKDIR}/serenebuilder.log
-cat >> ${WORKDIR}/serenebuilder.log <<EOF
+cat > ./serenebuilder.log << "EOF"
 
        ===============================
        ==  serenebuilder log  file  ==
        ===============================
-           serenebuilder  $serenebuilderVERSION
-
-       Distribution Mode Selected
+           serenebuilder  ${serenebuilderVERSION}
 
 EOF
 
-log_msg() {
-    echo "$1"
-    echo "$1" >>${WORKDIR}/serenebuilder.log
-}
 tee_log="tee -a ${WORKDIR}/serenebuilder.log"
 
 if [ "${CUSTOMISO}" == "serenebuilder.iso" ] ; then
@@ -66,14 +98,14 @@ if [ "${CUSTOMISO}" == "serenebuilder.iso" ] ; then
 fi
 
 #システム情報の出力
-echo " System info:" >>${WORKDIR}/serenebuilder.log
+log_only " System info:"
 
 if [ -e "/sys/firmware/efi/efivars/*" ] ; then
   BOOT_FIRMWARE="EFI"
-  echo "EFI vars found in /sys/firmware/efi/efivars/" >>${WORKDIR}/serenebuilder.log
+  log_only "EFI vars found in /sys/firmware/efi/efivars/"
 else
   BOOT_FIRMWARE="BIOS"
-  echo "no EFI vars found in /sys/firmware/efi/efivars/" >>${WORKDIR}/serenebuilder.log
+  log_only "no EFI vars found in /sys/firmware/efi/efivars/" 
 fi
 
 # Ubiquityのスライドショーがインストール済みか確認
@@ -81,8 +113,7 @@ slideshow_present=`dpkg --get-selections | grep 'slideshow'`
 if [ ! "${slideshow_present}" ] ; then
   bodhi_slideshow_present=`dpkg --get-selections | grep 'bodhi-slideshow'`
   if [ ! "${bodhi_slideshow_present}" ] ; then
-    log_msg "No slideshow installed for ubiquity"
-    exit 1
+    error "No slideshow installed for ubiquity" 1
   fi
 fi
 
@@ -134,10 +165,10 @@ log_msg "不要なパッケージの削除を行いシステムをクリーン�
 apt-get clean
 
 log_msg "serenebuilder-firstbootを有効化します"
-cp -f /etc/serenebuilder/firstboot/file-firstboot /etc/init.d/serenebuilder-firstboot
-sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/init.d/serenebuilder-firstboot
-chmod 755 /etc/init.d/serenebuilder-firstboot
-update-rc.d serenebuilder-firstboot defaults
+cp -f /etc/bodhibuilder/firstboot/file-firstboot /etc/init.d/bodhibuilder-firstboot
+sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/init.d/bodhibuilder-firstboot
+chmod 755 /etc/init.d/bodhibuilder-firstboot
+update-rc.d bodhibuilder-firstboot defaults
 
 # caspersのユーザUIDを変更
 sed -i -e 's@user-uid [0-9]*@user-uid 990@' /usr/share/initramfs-tools/scripts/casper-bottom/*adduser
@@ -153,12 +184,12 @@ fi
 log_msg "GTKフロントエンドのUbiquityをインストール"
 ubiquity_frontend_gtk_status=$(dpkg --get-selections | grep ubiquity-frontend-gtk)
 if [ "${ubiquity_frontend_gtk_status}" ] ; then
-    apt-get -y -q remove ubiquity-frontend-gtk &>> ${WORKDIR}/serenebuilder.log
+    apt-get -y -q remove ubiquity-frontend-gtk &>> ${WORKDIR}/bodhibuilder.log
     sleep 1
 else
-    echo "ubiquity-frontend-gtk not initially installed" >> ${WORKDIR}/serenebuilder.log
+    echo "ubiquity-frontend-gtk not initially installed" >> ${WORKDIR}/bodhibuilder.log
 fi
-apt-get -y -q install ubiquity-frontend-gtk &>> ${WORKDIR}/serenebuilder.log
+apt-get -y -q install ubiquity-frontend-gtk &>> ${WORKDIR}/bodhibuilder.log
 
 # ubiquity.desktopをレストア
 if [ -e /usr/share/applications/ubiquity.desktop_TEMP ] ; then
@@ -202,7 +233,7 @@ unset VAREXCLUDES
 unset ETCEXCLUDES
 
 if [ "${EXCLUDES}" ] ; then
-    echo "EXCLUDES variable is not empty" >> ${WORKDIR}/serenebuilder.log
+    echo "EXCLUDES variable is not empty" >> ${WORKDIR}/bodhibuilder.log
     for add in ${EXCLUDES} ; do # all exclusions
         ALLEXCLUDES="${ALLEXCLUDES} --exclude='${add}' "
     done
@@ -214,9 +245,9 @@ if [ "${EXCLUDES}" ] ; then
     done
 
     VAREXCLUDES=`echo ${VAREXCLUDES} | sed 's/\/var\//\//g'`
-    echo "" >> ${WORKDIR}/serenebuilder.log
-    echo "   Edited VAREXCLUDES IS:" >> ${WORKDIR}/serenebuilder.log
-    echo "${VAREXCLUDES}" >> ${WORKDIR}/serenebuilder.log
+    echo "" >> ${WORKDIR}/bodhibuilder.log
+    echo "   Edited VAREXCLUDES IS:" >> ${WORKDIR}/bodhibuilder.log
+    echo "${VAREXCLUDES}" >> ${WORKDIR}/bodhibuilder.log
     for addetc in ${EXCLUDES} ; do # exclusions in the etc dir
         addetcyes=`echo ${addetc} | grep '/etc/'`
         if [ "${addetcyes}" ] ; then
@@ -225,46 +256,46 @@ if [ "${EXCLUDES}" ] ; then
     done
 
     ETCEXCLUDES=`echo ${ETCEXCLUDES} | sed 's/\/etc\//\//g'` # Cleanup path for etc exclusions for rsync
-    echo "" >> ${WORKDIR}/serenebuilder.log
-    echo "   Edited ETCEXCLUDES IS:" >> ${WORKDIR}/serenebuilder.log
-    echo "${ETCEXCLUDES}" >> ${WORKDIR}/serenebuilder.log
+    echo "" >> ${WORKDIR}/bodhibuilder.log
+    echo "   Edited ETCEXCLUDES IS:" >> ${WORKDIR}/bodhibuilder.log
+    echo "${ETCEXCLUDES}" >> ${WORKDIR}/bodhibuilder.log
 fi
 
 # /etcと/varをrsyncする
 var_sync="rsync -a --exclude='*.log.[0-9]*' --exclude='*.log.old' --exclude='syslog.[0-9]*' --exclude='[bw]tmp.[0-9]*' --exclude='*.pid' --exclude='*.bak' --exclude='*.[0-9].gz' --exclude='*.deb' --exclude='kdecache*' --exclude='*~' ${VAREXCLUDES} /var/. ${WORKDIR}/dummysys/var/."
-echo "   syncing /var/ directory using:" >> ${WORKDIR}/serenebuilder.log
-echo "> ${var_sync}" >> ${WORKDIR}/serenebuilder.log
+echo "   syncing /var/ directory using:" >> ${WORKDIR}/bodhibuilder.log
+echo "> ${var_sync}" >> ${WORKDIR}/bodhibuilder.log
 eval ${var_sync}
 
 etc_sync="rsync -a ${ETCEXCLUDES} /etc/. ${WORKDIR}/dummysys/etc/."
-echo "   syncing /etc/ directory using:" >> ${WORKDIR}/serenebuilder.log
-echo "> ${etc_sync}" >> ${WORKDIR}/serenebuilder.log
+echo "   syncing /etc/ directory using:" >> ${WORKDIR}/bodhibuilder.log
+echo "> ${etc_sync}" >> ${WORKDIR}/bodhibuilder.log
 eval ${etc_sync}
-echo "done syncing" >> ${WORKDIR}/serenebuilder.log
+echo "done syncing" >> ${WORKDIR}/bodhibuilder.log
 
 # sources.listをバックアップ
-yes | cp -p ${WORKDIR}/dummysys/etc/apt/sources.list ${WORKDIR}/dummysys/etc/serenebuilder/apt/sources.list_BB
+yes | cp -p ${WORKDIR}/dummysys/etc/apt/sources.list ${WORKDIR}/dummysys/etc/bodhibuilder/apt/sources.list_BB
 #Adding packages location to sources
 DISKINFONAME=`echo $LIVECDLABEL | awk '{print $1}'`
 log_msg "Adding CD-ROM to source list"
 . /etc/lsb-release
 sed -i '/cdrom:/d' ${WORKDIR}/dummysys/etc/apt/sources.list &> /dev/null
 echo "deb [trusted=yes] file:/cdrom/dists/ ./  # ISO repo - BB" >> ${WORKDIR}/dummysys/etc/apt/sources.list
-echo "-- File Content of  ${WORKDIR}/dummysys/etc/apt/sources.list --" >> ${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/dummysys/etc/apt/sources.list >> ${WORKDIR}/serenebuilder.log
-echo "" >> ${WORKDIR}/serenebuilder.log
-echo "-- File Content of  /etc/apt/sources.list --" >> ${WORKDIR}/serenebuilder.log
-cat /etc/apt/sources.list >> ${WORKDIR}/serenebuilder.log
-echo "---------------------------" >> ${WORKDIR}/serenebuilder.log
+echo "-- File Content of  ${WORKDIR}/dummysys/etc/apt/sources.list --" >> ${WORKDIR}/bodhibuilder.log
+cat ${WORKDIR}/dummysys/etc/apt/sources.list >> ${WORKDIR}/bodhibuilder.log
+echo "" >> ${WORKDIR}/bodhibuilder.log
+echo "-- File Content of  /etc/apt/sources.list --" >> ${WORKDIR}/bodhibuilder.log
+cat /etc/apt/sources.list >> ${WORKDIR}/bodhibuilder.log
+echo "---------------------------" >> ${WORKDIR}/bodhibuilder.log
 
 # GRUB設定を変更
-if [ -e /etc/serenebuilder/grub/grub.bodhi ] ; then
+if [ -e /etc/bodhibuilder/grub/grub.bodhi ] ; then
     log_msg "Found custom grub for ${DISTNAME}"
-    cp -f /etc/serenebuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/
+    cp -f /etc/bodhibuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/
     chmod 644 ${WORKDIR}/dummysys/etc/default/grub.bodhi
-    cp -f /etc/serenebuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/grub
-    if [ -d /etc/serenebuilder/grub/backgrounds ] ; then
-        cp -rf /etc/serenebuilder/grub/backgrounds/ ${WORKDIR}/dummysys/etc/grub.d/
+    cp -f /etc/bodhibuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/grub
+    if [ -d /etc/bodhibuilder/grub/backgrounds ] ; then
+        cp -rf /etc/bodhibuilder/grub/backgrounds/ ${WORKDIR}/dummysys/etc/grub.d/
     fi
 fi
 
@@ -283,12 +314,12 @@ fi
 if [ "${which_desktop}" != "enlightenment" ] ; then # enlightenment & moksha use a different method for startup scripts
     if [ ! -f ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop ] ; then
         mkdir -p ${WORKDIR}/dummysys/etc/skel/.config/autostart/
-        cp -f /etc/serenebuilder/isofiles/iso_boot_script.desktop ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop
+        cp -f /etc/bodhibuilder/isofiles/iso_boot_script.desktop ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop
     fi
 fi
 
 # ブート時にrc.localを走らせる
-cp -f /etc/serenebuilder/isofiles/rc.local ${WORKDIR}/dummysys/etc/rc.local
+cp -f /etc/bodhibuilder/isofiles/rc.local ${WORKDIR}/dummysys/etc/rc.local
 chmod 755 ${WORKDIR}/dummysys/etc/rc.local
 sed -i "s/__LIVEUSER__/${LIVEUSER}/g" ${WORKDIR}/dummysys/etc/rc.local
 
@@ -360,7 +391,7 @@ if [ -e ${WORKDIR}/dummysys/var/lib/locales/supported.d/local ] ; then
     rm -f ${WORKDIR}/dummysys/var/lib/locales/supported.d/local
 fi
 
-log_msg "所在地の変更処理を実行しています"
+log_msg "Cleaning locate database within dummysys"
 if [ -e ${WORKDIR}/dummysys/var/lib/mlocate/mlocate.db ]; then
     rm -f ${WORKDIR}/dummysys/var/lib/mlocate/mlocate.db
     updatedb -l 1 -o ${WORKDIR}/dummysys/var/lib/mlocate/mlocate.db
@@ -404,13 +435,13 @@ netconnstatus=`dig | grep -o 'Got answer'` # report if ANY network hardware is c
 if [ "${netconnstatus}" ] ; then
     inetstatus=`wget -q --timeout=20 --spider www.ubuntu.com; echo $?`
     if [ "${inetstatus}" -ne 0 ] ; then # if above failed, do a double-check with google
-        log_msg "   www.ubuntu.comに接続できませんでした"
+        log_msg "   Could not connect to www.ubuntu.com"
         inetstatus=`wget -q --timeout=20 --spider www.google.com; echo $?`
         if [ "${inetstatus}" -ne 0 ] ; then # if above failed, do a triple-check with cisco
-            log_msg "   www.google.comに接続できませんでした"
+            log_msg "   Could not connect to www.google.com"
             inetstatus=`wget -q --timeout=20 --spider www.cisco.com; echo $?`
             if [ "${inetstatus}" -ne 0 ] ; then # Internet connectivity fail
-                log_msg "   www.cisco.comに接続できませんでした"
+                log_msg "   Could not connect to www.cisco.com"
             fi
         fi
     fi
@@ -419,14 +450,14 @@ else
 fi
 
 if [ "${inetstatus}" -eq 0 ] ; then # internet connection detected
-    log_msg "インターネットに接続できました"
-    log_msg "パッケージのアップグレードを行います"
-    apt-get update >>${WORKDIR}/serenebuilder.log
-    log_msg "dpkg-devをインストール中です"
-    apt-get install -y -q --no-install-recommends dpkg-dev >>${WORKDIR}/serenebuilder.log #CHARLES
-    dlpkg_all=`cat /etc/serenebuilder/debs/amd64/00_packages.list`
+    log_msg "connection to internet detected"
+    log_msg "Updating repos"
+    apt-get update >>${WORKDIR}/bodhibuilder.log
+    log_msg "Installing dpkg-dev if it's not already installed"
+    apt-get install -y -q --no-install-recommends dpkg-dev >>${WORKDIR}/bodhibuilder.log #CHARLES
+    dlpkg_all=`cat /etc/bodhibuilder/debs/amd64/00_packages.list`
     dlpkgfail="0"
-    log_msg "  最新のパッケージがインストールされました:"
+    log_msg "  downloading latest deb files for ${ARCH} packages:"
     log_msg "${dlpkg_all}"
     cd ${WORKDIR} && mkdir dlpkgtempdir && cd dlpkgtempdir
 
@@ -438,27 +469,27 @@ if [ "${inetstatus}" -eq 0 ] ; then # internet connection detected
     for dlpkgchk in ${dlpkg_all} ; do
         if [ ! -e ./${dlpkgchk}_* ] ; then
             dlpkgfail="1" && log_msg "dlpkgfail"
-            echo "file ${dlpkgchk}_(Some.New.Rev.Num)  -  does NOT exist." >>${WORKDIR}/serenebuilder.log
+            echo "file ${dlpkgchk}_(Some.New.Rev.Num)  -  does NOT exist." >>${WORKDIR}/bodhibuilder.log
         else
             dlpkgchkname=`ls -b ./${dlpkgchk}_*`
-            echo "file ${dlpkgchkname} exists" >>${WORKDIR}/serenebuilder.log
+            echo "file ${dlpkgchkname} exists" >>${WORKDIR}/bodhibuilder.log
         fi
     done
 
     if [ "${dlpkgfail}" = "1" ] ; then
-      log_msg "debファイルのダウンロードが正常に行われませんでした"
+      log_msg "Not able to download all deb files"
       cd ${WORKDIR} && rm -rf ./dlpkgtempdir
     fi
 
 else # no internet connection detected
-    log_msg "インターネット接続が検出されませんでした"
-    log_msg "インストール済みのパッケージで処理を続行します"
+    log_msg "no connection to internet detected"
+    log_msg "...not downloading latest uefi pool debs"
     dlpkgfail="1" && log_msg "dlpkgfail"
-    echo "pwd -->  ${PWD}" >>${WORKDIR}/serenebuilder.log
+    echo "pwd -->  ${PWD}" >>${WORKDIR}/bodhibuilder.log
 fi
 
 log_msg "EFI関係のファイルをコピー"
-yes | cp -av /etc/serenebuilder/uefi/* ${WORKDIR}/ISOTMP/ >>${WORKDIR}/serenebuilder.log
+yes | cp -av /etc/bodhibuilder/uefi/* ${WORKDIR}/ISOTMP/ >>${WORKDIR}/bodhibuilder.log
 
 # UEFI GRUBに名前を追加
 sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' ${WORKDIR}/ISOTMP/boot/grub/grub.cfg
@@ -470,13 +501,13 @@ if [ "${dlpkgfail}" == "0" ] ; then # successful downloads
     cd ${WORKDIR}
     yes | rm -rf ./dlpkgtempdir
 else
-    log_msg "debファイルのダウンロードに問題が発生しました"
-    log_msg "新しいdebパッケージがプールへコピーされませんでした"
-    pwd >>${WORKDIR}/serenebuilder.log
-    log_msg "古いdebパッケージをプールから削除しています"
-    yes | rm -vrf /etc/serenebuilder/uefi/dists/pool/* >>${WORKDIR}/serenebuilder.log
-    log_msg "debパッケージをプールへコピーしています"
-    yes | cp -av /etc/serenebuilder/debs/amd64/* /etc/serenebuilder/uefi/dists/pool/ >>${WORKDIR}/serenebuilder.log
+    log_msg "something was wrong with downloading deb files,"
+    log_msg "no new deb files being copied into pool so as to maintain compatibility"
+    pwd >>${WORKDIR}/bodhibuilder.log
+    log_msg "Removing old debs from pool"
+    yes | rm -vrf /etc/bodhibuilder/uefi/dists/pool/* >>${WORKDIR}/bodhibuilder.log
+    log_msg "Copying pre-existing arch-specific debs into pool"
+    yes | cp -av /etc/bodhibuilder/debs/amd64/* /etc/bodhibuilder/uefi/dists/pool/ >>${WORKDIR}/bodhibuilder.log
 fi
 
 # Ubiquityインストール用のリポジトリ作成
@@ -486,21 +517,21 @@ else
     mkdir ${WORKDIR}/ISOTMP/dists
 fi
   # Creating Packages.gz so the repo is valid
-log_msg "${WORKDIR}/ISOTMP/dists/Packages.gzを作成します"
+log_msg "Creating ${WORKDIR}/ISOTMP/dists/Packages.gz"
 cd ${WORKDIR}/ISOTMP/dists/
-dpkg-scanpackages pool /dev/null 2>>${WORKDIR}/serenebuilder.log | gzip -9c > ./Packages.gz
+dpkg-scanpackages pool /dev/null 2>>${WORKDIR}/bodhibuilder.log | gzip -9c > ./Packages.gz
 cd -
 
-log_msg "preseedファイルをコピーしています"
-cp /etc/serenebuilder/preseed/* ${WORKDIR}/ISOTMP/preseed/
+log_msg "Copying any preseed files"
+cp /etc/bodhibuilder/preseed/* ${WORKDIR}/ISOTMP/preseed/
 
 #BOOT Type is isolinux
-log_msg "LIVE環境向けにmemtest86+をコピーしています"
+log_msg "Copying memtest86+ for the live system"
 cp /boot/memtest86+.bin ${WORKDIR}/ISOTMP/install/memtest
 
 # ISOLINUXについて
-if [ ! -f /etc/serenebuilder/customisolinux/isolinux.cfg ] ; then # no custom isolinux (bb default)
-    log_msg "Live環境向けにISOLINUXをインストールしています"
+if [ ! -f /etc/bodhibuilder/customisolinux/isolinux.cfg ] ; then # no custom isolinux (bb default)
+    log_msg "Creating isolinux setup for the live system"
     find /usr/lib/ -name 'isohdpfx.bin' -exec cp -f {} ${WORKDIR}/ISOTMP/isolinux/ \;
     find /usr/lib/ -name 'isolinux.bin' -exec cp -f {} ${WORKDIR}/ISOTMP/isolinux/ \;
     if [ "${UBUVERSION}" -le 14 ] ; then
@@ -514,309 +545,11 @@ if [ ! -f /etc/serenebuilder/customisolinux/isolinux.cfg ] ; then # no custom is
         done
     fi
 
-    sed -e 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/serenebuilder/isolinux/isolinux.cfg.vesamenu > ${WORKDIR}/ISOTMP/isolinux/isolinux.cfg
-cp /etc/serenebuilder/isolinux/splash.png ${WORKDIR}/ISOTMP/isolinux/splash.png
+    sed -e 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/bodhibuilder/isolinux/isolinux.cfg.vesamenu > ${WORKDIR}/ISOTMP/isolinux/isolinux.cfg
+cp /etc/bodhibuilder/isolinux/splash.png ${WORKDIR}/ISOTMP/isolinux/splash.png
 else # custom isolinux
-    log_msg "Live環境向けにISOLINUXの独自設定をインストールしています"
-    cp /etc/serenebuilder/customisolinux/* ${WORKDIR}/ISOTMP/isolinux/ &> /dev/null
+    log_msg "Copying your custom isolinux setup to the live system"
+    cp /etc/bodhibuilder/customisolinux/* ${WORKDIR}/ISOTMP/isolinux/ &> /dev/null
 fi
 
-cat > ${WORKDIR}/ISOTMP/README.diskdefines <<FOO
-#define DISKNAME  ${LIVECDLABEL}
-#define TYPE  binary
-#define TYPEbinary  1
-#define ARCH  ${ARCH}
-#define ARCH$ARCH  1
-#define DISKNUM  1
-#define DISKNUM1  1
-#define TOTALNUM  0
-#define TOTALNUM0  1
-FOO
 
-cp ${WORKDIR}/ISOTMP/README.diskdefines ${WORKDIR}/ISOTMP/casper/README.diskdefines
-sleep 1
-
-log_msg "filesystem.manifestとfilesystem.manifest-desktopを作成します"
-
-dpkg-query -W --showformat='${Package} ${Version}\n' > ${WORKDIR}/ISOTMP/casper/filesystem.manifest
-cp ${WORKDIR}/ISOTMP/casper/filesystem.manifest ${WORKDIR}/ISOTMP/casper/filesystem.manifest-desktop
-sed -i '/ubiquity-frontend/d' ${WORKDIR}/ISOTMP/casper/filesystem.manifest-desktop
-sleep 1
-
-log_msg " casper.confを作成します"
-log_msg "ubiquity.desktopをコピーしています"
-echo "- /usr/share/applications/下にある利用可能なUbiquity.desktopのリスト"
-ls -l /usr/share/applications/UBIQUITY* >>${WORKDIR}/serenebuilder.log
-ls -l /usr/share/applications/ubiquity* >>${WORKDIR}/serenebuilder.log
-if [ ! -e /usr/share/applications/UBIQUITY.desktop_ORIG ] ; then
-    echo "- 元のubiquity.desktopの名前をUBIQUITY.desktop_ORIGに変更します" >>${WORKDIR}/serenebuilder.log
-    find /usr/share/applications -name 'ubiquity.desktop' -execdir mv -v '{}' UBIQUITY.desktop_ORIG \; >>${WORKDIR}/serenebuilder.log
-fi
-if [ -e /usr/share/applications/UBIQUITY.desktop ] ; then
-    yes | rm -vrf /usr/share/applications/UBIQUITY.desktop >>${WORKDIR}/serenebuilder.log
-fi
-echo "- カスタムubiquity.desktopをコピーしています" >>${WORKDIR}/serenebuilder.log
-cp -vf /etc/serenebuilder/ubiquity/ubiquity.desktop /usr/share/applications/ubiquity.desktop >>${WORKDIR}/serenebuilder.log
-sed -i "s/_LIVE_CD_LABEL_/${LIVECDLABEL}/" /usr/share/applications/ubiquity.desktop &> /dev/null
-
-if [ -e /usr/share/icons/bbinstall.png ] ; then
-    if [ ! -e /usr/share/icons/bbinstall_previous.png ] ; then
-        cp -f /usr/share/icons/bbinstall.png /usr/share/icons/bbinstall_previous.png
-    fi
-fi
-echo "- インストーラーアイコンをコピーしています" >>${WORKDIR}/serenebuilder.log
-cp -vf /etc/serenebuilder/ubiquity/bbinstall.png /usr/share/icons/bbinstall.png
-
-log_msg "casper.confを作成しています"
-cat > /etc/casper.conf <<FOO
-# This file should go in /etc/casper.conf
-# Supported variables are:
-# USERNAME, USERFULLNAME, HOST, BUILD_SYSTEM
-
-export USERNAME="${LIVEUSER}"
-export USERFULLNAME="Live session user"
-export HOST="${LIVEUSER}"
-export BUILD_SYSTEM="Ubuntu"
-export FLAVOUR="${LIVEUSER}"
-FOO
-
-cp /etc/casper.conf ${WORKDIR}/dummysys/etc
-sleep 1
-
-log_msg "ライブ環境のuser-setup-applyの設定と確認をしています"
-if [ -f /usr/lib/ubiquity/user-setup/user-setup-apply.orig ] ; then
-    cp /usr/lib/ubiquity/user-setup/user-setup-apply.orig /usr/lib/ubiquity/user-setup/user-setup-apply
-fi
-if [ ! -f /usr/lib/ubiquity/user-setup/user-setup-apply.orig ] ; then
-    mv /usr/lib/ubiquity/user-setup/user-setup-apply /usr/lib/ubiquity/user-setup/user-setup-apply.orig
-fi
-echo "exit 0"> /usr/lib/ubiquity/user-setup/user-setup-apply
-chmod 755 /usr/lib/ubiquity/user-setup/user-setup-apply
-sleep 1
-
-log_msg "casperとUbiquityの設定を行います"
-if [ ! -f "/usr/share/ubiquity/apt-setup.0RIG" ] ; then
-    cp -f /usr/share/ubiquity/apt-setup /usr/share/ubiquity/apt-setup.0RIG
-fi
-rm -f /usr/share/ubiquity/apt-setup &> /dev/null
-cp -f /etc/serenebuilder/ubiquity/apt-setup.* /usr/share/ubiquity/
-cp -f /etc/serenebuilder/ubiquity/apt-setup.bb /usr/share/ubiquity/apt-setup # pre-configured apt-setup for serenebuilder
-chmod 755 /usr/share/ubiquity/apt-setup
-
-log_msg "initial RAMディスクを作成します"
-mkinitramfs -o /boot/initrd.img-`readlink /vmlinuz | cut -c 14-` `readlink /vmlinuz | cut -c 14-`
-
-log_msg "LiveCDへlinuxカーネルとinitrdをコピーします"
-log_msg "casper/vmlinuz.efiを作成します"
-cp /boot/vmlinuz-`readlink /vmlinuz | cut -c 14-` ${WORKDIR}/ISOTMP/casper/vmlinuz.efi
-
-log_msg "initrdをコピーしています"
-cp -v /boot/initrd.img-`readlink /vmlinuz | cut -c 14-` ${WORKDIR}/ISOTMP/casper/initrd.lz
-
-if [ ! -f ${WORKDIR}/ISOTMP/casper/vmlinuz.efi ] ; then
-    log_msg "vmlinuz.efiが見つかりませんでした"
-    exit 1
-fi
-
-if [ ! -f ${WORKDIR}/ISOTMP/casper/initrd.lz ] ; then
-    log_msg "initrdがコピーできませんでした"
-    exit 1
-fi
-
-log_msg "filesystem.squashfsを作成します"
-
-if [ -f ${WORKDIR}/ISOTMP/casper/filesystem.squashfs ] ; then
-    rm -f ${WORKDIR}/ISOTMP/casper/filesystem.squashfs &> /dev/null
-fi
-
-unset REALFOLDERS
-
-for d in `ls -d ${WORKDIR}/dummysys/*`; do
-    REALFOLDERS="${REALFOLDERS} ${d}"
-done
-
-for d in `ls / | grep -v etc | grep -v run | grep -v tmp | grep -v sys | grep -v var | grep -v dev | grep -v media | grep -v mnt | grep -v lost+found | grep -v proc | grep -v home`; do
-    REALFOLDERS="${REALFOLDERS} /${d}"
-done
-
-if [ "${DISTICONS}" ] ; then
-    log_msg "不要なアイコンの削除"
-    #~ EXCLUDEICONS=`ls -db /usr/share/icons/*`
-    EXCLUDEICONS=`find /usr/share/icons/* -maxdepth 0 -exec echo -n {} +` # all files in /usr/share/icons/
-    for i in ${DISTICONS} ; do
-        if [ -e "/usr/share/icons/${i}" ] ; then
-            echo "Removing ${i} from EXCLUDEICONS" >>${WORKDIR}/serenebuilder.log
-            EXCLUDEICONS=`echo ${EXCLUDEICONS} | sed -e "s/ \/usr\/share\/icons\/${i} / /"`
-        fi
-    done
-      # EXCLUDEICONS is now all files in /usr/share/icons/ except those from DISTICONS
-    echo "      EXCLUDEICONS is now:" >>${WORKDIR}/serenebuilder.log
-    echo " > ${EXCLUDEICONS}" >>${WORKDIR}/serenebuilder.log
-fi
-
-if [ "${DISTLOCALE}" ] ; then
-    log_msg "Purging unwanted locales"
-    EXCLUDELOCALES=`find /usr/share/locale/* -maxdepth 0 -type d -exec echo -n {} +` # lists all directories in /usr/share/locale/
-    echo "      EXCLUDELOCALES started as:" >>${WORKDIR}/serenebuilder.log
-    echo " > ${EXCLUDELOCALES}" >>${WORKDIR}/serenebuilder.log
-    for i in ${DISTLOCALE} ; do
-        if [ -d "/usr/share/locale/${i}" ] ; then
-            echo "Removing ${i} from EXCLUDELOCALES" >>${WORKDIR}/serenebuilder.log
-            EXCLUDELOCALES=`echo ${EXCLUDELOCALES} | sed -e "s/ \/usr\/share\/locale\/${i} / /"`
-        fi
-    done
-    echo "      EXCLUDELOCALES is now:" >>${WORKDIR}/serenebuilder.log
-    echo " > ${EXCLUDELOCALES}" >>${WORKDIR}/serenebuilder.log
-fi
-
-squashcmd="mksquashfs ${REALFOLDERS} ${WORKDIR}/ISOTMP/casper/filesystem.squashfs ${SQUASHFSOPTS} -e root/.local/Trash root/.thumbnails root/.cache root/.bash_history root/.lesshst root/.nano_history /boot/grub /usr/share/applications/serenebuilder-gtk.desktop ${BASEWORKDIR} ${EXCLUDEICONS} ${EXCLUDELOCALES} ${EXCLUDES} 2>>${WORKDIR}/serenebuilder.log"
-
-echo "mksquashfs command:" >>${WORKDIR}/serenebuilder.log
-echo " > ${squashcmd}"  >>${WORKDIR}/serenebuilder.log
-
-${TERMINALSOFT}
-eval ${squashcmd}
-sleep 1
-
-echo "Updating the serenebuilder.log"
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "Mount information" >>${WORKDIR}/serenebuilder.log
-mount >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "Disk size information" >>${WORKDIR}/serenebuilder.log
-df -h >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "Casper Script info" >>${WORKDIR}/serenebuilder.log
-ls -l /usr/share/initramfs-tools/scripts/casper-bottom/ >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/serenebuilder.conf info" >>${WORKDIR}/serenebuilder.log
-cat /etc/serenebuilder.conf >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/casper.conf info" >>${WORKDIR}/serenebuilder.log
-cat /etc/casper.conf >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/passwd info" >>${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/dummysys/etc/passwd >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/group info" >>${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/dummysys/etc/group >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/X11/default-display-manager info" >>${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/dummysys/etc/X11/default-display-manager >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "/etc/skel info" >>${WORKDIR}/serenebuilder.log
-find /etc/skel >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "lsb-release info" >>${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/dummysys/etc/lsb-release >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "serenebuilder version info" >>${WORKDIR}/serenebuilder.log
-cat /etc/serenebuilder/serenebuilder.version >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "ISOTMP info" >>${WORKDIR}/serenebuilder.log
-ls -Rl ${WORKDIR}/ISOTMP >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "${WORKDIR}/tmpusers info" >>${WORKDIR}/serenebuilder.log
-cat ${WORKDIR}/tmpusers >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-echo "Command-line options = $@" >>${WORKDIR}/serenebuilder.log
-echo "------------------------------------------------------" >>${WORKDIR}/serenebuilder.log
-
-sleep 1
-
-log_msg "Live環境のサイズを計測しています"
-    unsquashfs -lls ${WORKDIR}/ISOTMP/casper/filesystem.squashfs | grep -v " inodes " | grep -v "unsquashfs:" | awk '{print $3}' | grep -v "," > /tmp/size.tmp
-    for i in `cat /tmp/size.tmp`; do a=$((${a}+${i})); done
-    echo ${a} > ${WORKDIR}/ISOTMP/casper/filesystem.size
-
-log_msg "ホスト環境でのserenebuilder-firstbootを無効化"
-update-rc.d -f serenebuilder-firstboot remove
-chmod 644 /etc/init.d/serenebuilder-firstboot
-
-log_msg "ubiquity.desktopをレストアしています"
-if [ -e /usr/share/applications/UBIQUITY.desktop_ORIG ] ; then
-    mv -f /usr/share/applications/ubiquity.desktop /usr/share/applications/ubiquity.desktop_BB
-    mv -f /usr/share/applications/UBIQUITY.desktop_ORIG /usr/share/applications/ubiquity.desktop
-fi
-
-if [ ! -f "${WORKDIR}/ISOTMP/casper/filesystem.squashfs" ] ; then
-    log_msg "filesystem.squashfsが見つかりませんでした"
-    log_msg "Serene-Builderを終了します"
-    exit 1
-fi
-
-log_msg "UEFIブートに必要なファイルの作成をします"
-. ${WORKDIR}/dummysys/etc/lsb-release
-
-touch ${WORKDIR}/ISOTMP/ubuntu
-touch ${WORKDIR}/ISOTMP/.disk/base_installable
-echo "full_cd/single" > ${WORKDIR}/ISOTMP/.disk/cd_type
-
-DISKINFONAME=`echo ${LIVECDLABEL} | awk '{print $1}'`
-echo ${DISKINFONAME} ${DISTRIB_RELEASE} - Release ${ARCH} > ${WORKDIR}/ISOTMP/.disk/info
-echo ${LIVECDURL} > ${WORKDIR}/ISOTMP/.disk/release_notes_url
-
-log_msg "md5sum.txtを作成します"
-cd ${WORKDIR}/ISOTMP && find . -type f -print0 | xargs -0 md5sum > md5sum.txt
-
-# ISOLINUX関係の処理
-sed -e '/isolinux/d' md5sum.txt > md5sum.txt.new
-sed -e '/md5sum/d' md5sum.txt.new > md5sum.txt
-rm -f md5sum.txt.new &> /dev/null
-sleep 1
-
-log_msg "${CUSTOMISO}を${WORKDIR}下に作成します"
-
-if [ ! -f "${WORKDIR}/ISOTMP/isolinux/isohdpfx.bin" ] ; then
-    log_msg " '${WORKDIR}/ISOTMP/isolinux/isohdpfx.bin' が存在しません"
-    log_msg "Serene-Builderを終了します"
-    exit 1
-fi
-
- log_msg "creating 64-bit ISO with xorriso"
-xorriso -as mkisofs \
-    -isohybrid-mbr ${WORKDIR}/ISOTMP/isolinux/isohdpfx.bin \
-    -partition_offset 16 \
-    -cache-inodes -J -l \
-    -iso-level 3 \
-    -V "${LIVECDLABEL}" \
-    -c isolinux/boot.cat \
-    -b isolinux/isolinux.bin \
-    -no-emul-boot \
-    -boot-load-size 4 \
-    -boot-info-table \
-    -eltorito-alt-boot \
-    -e boot/grub/efi.img \
-    -no-emul-boot \
-    -isohybrid-gpt-basdat \
-    -isohybrid-apm-hfsplus \
-    -o ${WORKDIR}/${CUSTOMISO} "${WORKDIR}/ISOTMP" 2>>${WORKDIR}/serenebuilder.log 1>>${WORKDIR}/serenebuilder.log
-
-if [ ! -f ${WORKDIR}/${CUSTOMISO} ] ; then
-    log_msg "ISOファイルが正常に生成されませんでした"
-    log_msg "Serene-Builderを終了します"
-    exit 1
-fi
-
-log_msg "オリジナルのapt-setupを復元しています"
-if [ -f "/usr/share/ubiquity/apt-setup.0RIG" ] ; then
-    cp -f /usr/share/ubiquity/apt-setup.0RIG /usr/share/ubiquity/apt-setup
-fi
-
-log_msg "${CUSTOMISO}.md5 を作成しています"
-cd ${WORKDIR}
-md5sum ${CUSTOMISO} > ${CUSTOMISO}.md5
-sleep 1
-# create the sha256 sum
-log_msg "${CUSTOMISO}.sha256を作成しています"
-cd ${WORKDIR}
-sha256sum ${CUSTOMISO} > ${CUSTOMISO}.sha256
-
-sleep 1
-ISOSIZE1="`ls -hs ${WORKDIR}/${CUSTOMISO} | awk '{print $1}'`"
-ISOSIZE2="`ls -l ${WORKDIR}/${CUSTOMISO} | awk '{print $5}'`"
-
-log_msg "ISOファイルの作成が完了しました"
-log_msg "ISOファイル: ${WORKDIR}/${CUSTOMISO}  =  ${ISOSIZE1} (${ISOSIZE2})"
-
-exit 0
