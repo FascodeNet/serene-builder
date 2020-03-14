@@ -1,15 +1,14 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# 確認
-if [ $UID != 0 ]; then
-    echo "Rootユーザもしくはsudo権限を持ったユーザで実行する必要があります" 1>&2
-    exit 1
-fi
+# エラー発生時に中断
+set -e
 
-# 設定ファイルの読み込み
-# $WORKDIR $EXCLUDES $LIVEUSER $LIVECDLABEL $CUSTOMISO $SQUASHFSOPTS
-# $BACKUPSHOWINSTALL $LIVECDURL $DISTICONS $DISTLOCALE $DISTNAME $TERMINALSOFT
-. /etc/serenebuilder.conf
+# 未定義変数を参照時に中断
+# set -u
+
+# デバッグモード
+# set -x
+
 
 # 変数の定義
 ARCH=amd64
@@ -22,43 +21,76 @@ serenebuilderVERSION="1.0"
 OPT1="dist"
 LIVEUSER="$(echo ${LIVEUSER} | awk {print tolower ($0)})"
 
+
+# 確認
+if [ $UID != 0 ]; then
+    echo "Rootユーザもしくはsudo権限を持ったユーザで実行する必要があります" 1>&2
+    exit 1
+fi
+
+
+# エラー
+# error [エラー内容] <終了コード>
+error() {
+    echo -e "[Builder]: ${1}" >&2
+    echo -e "[Eror]: ${@}" >>${WORKDIR}/serenebuilder.log
+    if [[ -n ${2} ]]; then
+        exit ${2}
+    fi
+}
+
+# ログと画面に出力
+# log [ログ内容]
+log_msg() {
+    echo -e "[Builder]: ${@}"
+    echo -e "[INFO]: ${@}" >>${WORKDIR}/serenebuilder.log
+}
+
+# ログに出力
+log_only() {
+    echo -e "[INFO]: ${@}" >>${WORKDIR}/serenebuilder.log
+}
+
+
+# 設定ファイルの読み込み
+# $WORKDIR $EXCLUDES $LIVEUSER $LIVECDLABEL $CUSTOMISO $SQUASHFSOPTS
+# $BACKUPSHOWINSTALL $LIVECDURL $DISTICONS $DISTLOCALE $DISTNAME
+if [[ -f /etc/serenebuilder.conf ]]; then
+    source /etc/serenebuilder.conf
+else
+    error "設定ファイルがありません。" 1
+fi
+
+
 # 作業ディレクトリの存在確認
 if [ ! -d ${WORKDIR} ] ; then
     mkdir -p ${WORKDIR}
     if [ ! -d ${WORKDIR} ] ; then
-      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-      echo "! 作業ディレクトリの作成が出来ませんでした !"
-      echo "!     ${WORKDIR} !"
-      echo "! Serene-Builderを終了します               !"
-      echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
-      exit 1
+      error "! 作業ディレクトリ[${WORKDIR}]の作成が出来ませんでした !" 1
     fi
+else
+    error '作業ディレクトリが既に存在しています。' 1
 fi
+
 
 # 移動
 cd ${WORKDIR}
 
+
 # ログファイルの作成
 if [ -f ${WORKDIR}/serenebuilder.log ] ; then
-    echo -e "\n\n\n\n== serenebuilder.log file already exists\n== not removing log file, just adding to it\n" >> ${WORKDIR}/serenebuilder.log
+    log_only "\n\n\n\n== serenebuilder.log file already exists\n== not removing log file, just adding to it\n"
 fi
 
-touch ${WORKDIR}/serenebuilder.log
-cat >> ${WORKDIR}/serenebuilder.log <<EOF
+cat > ./serenebuilder.log << "EOF"
 
        ===============================
        ==  serenebuilder log  file  ==
        ===============================
-           serenebuilder  $serenebuilderVERSION
-
-       Distribution Mode Selected
+           serenebuilder  ${serenebuilderVERSION}
 
 EOF
 
-log_msg() {
-    echo "$1"
-    echo "$1" >>${WORKDIR}/serenebuilder.log
-}
 tee_log="tee -a ${WORKDIR}/serenebuilder.log"
 
 if [ "${CUSTOMISO}" == "serenebuilder.iso" ] ; then
@@ -66,14 +98,14 @@ if [ "${CUSTOMISO}" == "serenebuilder.iso" ] ; then
 fi
 
 #システム情報の出力
-echo " System info:" >>${WORKDIR}/serenebuilder.log
+log_only " System info:"
 
 if [ -e "/sys/firmware/efi/efivars/*" ] ; then
   BOOT_FIRMWARE="EFI"
-  echo "EFI vars found in /sys/firmware/efi/efivars/" >>${WORKDIR}/serenebuilder.log
+  log_only "EFI vars found in /sys/firmware/efi/efivars/"
 else
   BOOT_FIRMWARE="BIOS"
-  echo "no EFI vars found in /sys/firmware/efi/efivars/" >>${WORKDIR}/serenebuilder.log
+  log_only "no EFI vars found in /sys/firmware/efi/efivars/" 
 fi
 
 # Ubiquityのスライドショーがインストール済みか確認
@@ -81,8 +113,7 @@ slideshow_present=`dpkg --get-selections | grep 'slideshow'`
 if [ ! "${slideshow_present}" ] ; then
   bodhi_slideshow_present=`dpkg --get-selections | grep 'bodhi-slideshow'`
   if [ ! "${bodhi_slideshow_present}" ] ; then
-    log_msg "No slideshow installed for ubiquity"
-    exit 1
+    error "No slideshow installed for ubiquity" 1
   fi
 fi
 
@@ -366,7 +397,7 @@ if [ -e ${WORKDIR}/dummysys/var/lib/mlocate/mlocate.db ]; then
     updatedb -l 1 -o ${WORKDIR}/dummysys/var/lib/mlocate/mlocate.db
 fi
 
-log_msg "ライブシステム向けにいろいろクリーンアップ"
+log_msg "ライブシステム向けにいろいろクリーンアップをしています"
 grep '^[^:]*:[^:]*:[0-9]:' /etc/passwd > ${WORKDIR}/dummysys/etc/passwd
 grep '^[^:]*:[^:]*:[0-9][0-9]:' /etc/passwd >> ${WORKDIR}/dummysys/etc/passwd
 grep '^[^:]*:[^:]*:[0-9][0-9][0-9]:' /etc/passwd >> ${WORKDIR}/dummysys/etc/passwd
@@ -404,13 +435,13 @@ netconnstatus=`dig | grep -o 'Got answer'` # report if ANY network hardware is c
 if [ "${netconnstatus}" ] ; then
     inetstatus=`wget -q --timeout=20 --spider www.ubuntu.com; echo $?`
     if [ "${inetstatus}" -ne 0 ] ; then # if above failed, do a double-check with google
-        log_msg "   www.ubuntu.comに接続できませんでした"
+        log_msg "ubuntu.comに接続できませんでした"
         inetstatus=`wget -q --timeout=20 --spider www.google.com; echo $?`
         if [ "${inetstatus}" -ne 0 ] ; then # if above failed, do a triple-check with cisco
-            log_msg "   www.google.comに接続できませんでした"
+            log_msg "google.comに接続できませんでした"
             inetstatus=`wget -q --timeout=20 --spider www.cisco.com; echo $?`
             if [ "${inetstatus}" -ne 0 ] ; then # Internet connectivity fail
-                log_msg "   www.cisco.comに接続できませんでした"
+                log_msg "cisco.comに接続できませんでした"
             fi
         fi
     fi
@@ -420,13 +451,13 @@ fi
 
 if [ "${inetstatus}" -eq 0 ] ; then # internet connection detected
     log_msg "インターネットに接続できました"
-    log_msg "パッケージのアップグレードを行います"
+    log_msg "パッケージのアップグレード中です"
     apt-get update >>${WORKDIR}/serenebuilder.log
     log_msg "dpkg-devをインストール中です"
     apt-get install -y -q --no-install-recommends dpkg-dev >>${WORKDIR}/serenebuilder.log #CHARLES
     dlpkg_all=`cat /etc/serenebuilder/debs/amd64/00_packages.list`
     dlpkgfail="0"
-    log_msg "  最新のパッケージがインストールされました:"
+    log_msg "最新のパッケージがインストールされました"
     log_msg "${dlpkg_all}"
     cd ${WORKDIR} && mkdir dlpkgtempdir && cd dlpkgtempdir
 
@@ -438,15 +469,13 @@ if [ "${inetstatus}" -eq 0 ] ; then # internet connection detected
     for dlpkgchk in ${dlpkg_all} ; do
         if [ ! -e ./${dlpkgchk}_* ] ; then
             dlpkgfail="1" && log_msg "dlpkgfail"
-            echo "file ${dlpkgchk}_(Some.New.Rev.Num)  -  does NOT exist." >>${WORKDIR}/serenebuilder.log
         else
             dlpkgchkname=`ls -b ./${dlpkgchk}_*`
-            echo "file ${dlpkgchkname} exists" >>${WORKDIR}/serenebuilder.log
         fi
     done
 
     if [ "${dlpkgfail}" = "1" ] ; then
-      log_msg "debファイルのダウンロードが正常に行われませんでした"
+      log_msg ""
       cd ${WORKDIR} && rm -rf ./dlpkgtempdir
     fi
 
@@ -475,7 +504,7 @@ else
     pwd >>${WORKDIR}/serenebuilder.log
     log_msg "古いdebパッケージをプールから削除しています"
     yes | rm -vrf /etc/serenebuilder/uefi/dists/pool/* >>${WORKDIR}/serenebuilder.log
-    log_msg "debパッケージをプールへコピーしています"
+    log_msg  "debパッケージをプールへコピーしています"
     yes | cp -av /etc/serenebuilder/debs/amd64/* /etc/serenebuilder/uefi/dists/pool/ >>${WORKDIR}/serenebuilder.log
 fi
 
@@ -521,8 +550,8 @@ else # custom isolinux
     cp /etc/serenebuilder/customisolinux/* ${WORKDIR}/ISOTMP/isolinux/ &> /dev/null
 fi
 
-cat > ${WORKDIR}/ISOTMP/README.diskdefines <<FOO
-#define DISKNAME  ${LIVECDLABEL}
+
+
 #define TYPE  binary
 #define TYPEbinary  1
 #define ARCH  ${ARCH}
