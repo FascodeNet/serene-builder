@@ -1,0 +1,4 @@
+/etc/serenebuilder.conf
+/etc/serenebuilder/apt/custom_repos
+/etc/serenebuilder/firstboot/file-firstboot
+/etc/serenebuilder/grub/grub.bodhi
