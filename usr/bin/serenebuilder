@@ -165,10 +165,10 @@ log_msg "不要なパッケージの削除を行いシステムをクリーン�
 apt-get clean
 
 log_msg "serenebuilder-firstbootを有効化します"
-cp -f /etc/bodhibuilder/firstboot/file-firstboot /etc/init.d/bodhibuilder-firstboot
-sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/init.d/bodhibuilder-firstboot
-chmod 755 /etc/init.d/bodhibuilder-firstboot
-update-rc.d bodhibuilder-firstboot defaults
+cp -f /etc/serenebuilder/firstboot/file-firstboot /etc/init.d/serenebuilder-firstboot
+sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/init.d/serenebuilder-firstboot
+chmod 755 /etc/init.d/serenebuilder-firstboot
+update-rc.d serenebuilder-firstboot defaults
 
 # caspersのユーザUIDを変更
 sed -i -e 's@user-uid [0-9]*@user-uid 990@' /usr/share/initramfs-tools/scripts/casper-bottom/*adduser
@@ -184,12 +184,12 @@ fi
 log_msg "GTKフロントエンドのUbiquityをインストール"
 ubiquity_frontend_gtk_status=$(dpkg --get-selections | grep ubiquity-frontend-gtk)
 if [ "${ubiquity_frontend_gtk_status}" ] ; then
-    apt-get -y -q remove ubiquity-frontend-gtk &>> ${WORKDIR}/bodhibuilder.log
+    apt-get -y -q remove ubiquity-frontend-gtk &>> ${WORKDIR}/serenebuilder.log
     sleep 1
 else
-    echo "ubiquity-frontend-gtk not initially installed" >> ${WORKDIR}/bodhibuilder.log
+    echo "ubiquity-frontend-gtk not initially installed" >> ${WORKDIR}/serenebuilder.log
 fi
-apt-get -y -q install ubiquity-frontend-gtk &>> ${WORKDIR}/bodhibuilder.log
+apt-get -y -q install ubiquity-frontend-gtk &>> ${WORKDIR}/serenebuilder.log
 
 # ubiquity.desktopをレストア
 if [ -e /usr/share/applications/ubiquity.desktop_TEMP ] ; then
@@ -233,7 +233,7 @@ unset VAREXCLUDES
 unset ETCEXCLUDES
 
 if [ "${EXCLUDES}" ] ; then
-    echo "EXCLUDES variable is not empty" >> ${WORKDIR}/bodhibuilder.log
+    echo "EXCLUDES variable is not empty" >> ${WORKDIR}/serenebuilder.log
     for add in ${EXCLUDES} ; do # all exclusions
         ALLEXCLUDES="${ALLEXCLUDES} --exclude='${add}' "
     done
@@ -245,9 +245,9 @@ if [ "${EXCLUDES}" ] ; then
     done
 
     VAREXCLUDES=`echo ${VAREXCLUDES} | sed 's/\/var\//\//g'`
-    echo "" >> ${WORKDIR}/bodhibuilder.log
-    echo "   Edited VAREXCLUDES IS:" >> ${WORKDIR}/bodhibuilder.log
-    echo "${VAREXCLUDES}" >> ${WORKDIR}/bodhibuilder.log
+    echo "" >> ${WORKDIR}/serenebuilder.log
+    echo "   Edited VAREXCLUDES IS:" >> ${WORKDIR}/serenebuilder.log
+    echo "${VAREXCLUDES}" >> ${WORKDIR}/serenebuilder.log
     for addetc in ${EXCLUDES} ; do # exclusions in the etc dir
         addetcyes=`echo ${addetc} | grep '/etc/'`
         if [ "${addetcyes}" ] ; then
@@ -256,46 +256,46 @@ if [ "${EXCLUDES}" ] ; then
     done
 
     ETCEXCLUDES=`echo ${ETCEXCLUDES} | sed 's/\/etc\//\//g'` # Cleanup path for etc exclusions for rsync
-    echo "" >> ${WORKDIR}/bodhibuilder.log
-    echo "   Edited ETCEXCLUDES IS:" >> ${WORKDIR}/bodhibuilder.log
-    echo "${ETCEXCLUDES}" >> ${WORKDIR}/bodhibuilder.log
+    echo "" >> ${WORKDIR}/serenebuilder.log
+    echo "   Edited ETCEXCLUDES IS:" >> ${WORKDIR}/serenebuilder.log
+    echo "${ETCEXCLUDES}" >> ${WORKDIR}/serenebuilder.log
 fi
 
 # /etcと/varをrsyncする
 var_sync="rsync -a --exclude='*.log.[0-9]*' --exclude='*.log.old' --exclude='syslog.[0-9]*' --exclude='[bw]tmp.[0-9]*' --exclude='*.pid' --exclude='*.bak' --exclude='*.[0-9].gz' --exclude='*.deb' --exclude='kdecache*' --exclude='*~' ${VAREXCLUDES} /var/. ${WORKDIR}/dummysys/var/."
-echo "   syncing /var/ directory using:" >> ${WORKDIR}/bodhibuilder.log
-echo "> ${var_sync}" >> ${WORKDIR}/bodhibuilder.log
+echo "   syncing /var/ directory using:" >> ${WORKDIR}/serenebuilder.log
+echo "> ${var_sync}" >> ${WORKDIR}/serenebuilder.log
 eval ${var_sync}
 
 etc_sync="rsync -a ${ETCEXCLUDES} /etc/. ${WORKDIR}/dummysys/etc/."
-echo "   syncing /etc/ directory using:" >> ${WORKDIR}/bodhibuilder.log
-echo "> ${etc_sync}" >> ${WORKDIR}/bodhibuilder.log
+echo "   syncing /etc/ directory using:" >> ${WORKDIR}/serenebuilder.log
+echo "> ${etc_sync}" >> ${WORKDIR}/serenebuilder.log
 eval ${etc_sync}
-echo "done syncing" >> ${WORKDIR}/bodhibuilder.log
+echo "done syncing" >> ${WORKDIR}/serenebuilder.log
 
 # sources.listをバックアップ
-yes | cp -p ${WORKDIR}/dummysys/etc/apt/sources.list ${WORKDIR}/dummysys/etc/bodhibuilder/apt/sources.list_BB
+yes | cp -p ${WORKDIR}/dummysys/etc/apt/sources.list ${WORKDIR}/dummysys/etc/serenebuilder/apt/sources.list_BB
 #Adding packages location to sources
 DISKINFONAME=`echo $LIVECDLABEL | awk '{print $1}'`
 log_msg "Adding CD-ROM to source list"
 . /etc/lsb-release
 sed -i '/cdrom:/d' ${WORKDIR}/dummysys/etc/apt/sources.list &> /dev/null
 echo "deb [trusted=yes] file:/cdrom/dists/ ./  # ISO repo - BB" >> ${WORKDIR}/dummysys/etc/apt/sources.list
-echo "-- File Content of  ${WORKDIR}/dummysys/etc/apt/sources.list --" >> ${WORKDIR}/bodhibuilder.log
-cat ${WORKDIR}/dummysys/etc/apt/sources.list >> ${WORKDIR}/bodhibuilder.log
-echo "" >> ${WORKDIR}/bodhibuilder.log
-echo "-- File Content of  /etc/apt/sources.list --" >> ${WORKDIR}/bodhibuilder.log
-cat /etc/apt/sources.list >> ${WORKDIR}/bodhibuilder.log
-echo "---------------------------" >> ${WORKDIR}/bodhibuilder.log
+echo "-- File Content of  ${WORKDIR}/dummysys/etc/apt/sources.list --" >> ${WORKDIR}/serenebuilder.log
+cat ${WORKDIR}/dummysys/etc/apt/sources.list >> ${WORKDIR}/serenebuilder.log
+echo "" >> ${WORKDIR}/serenebuilder.log
+echo "-- File Content of  /etc/apt/sources.list --" >> ${WORKDIR}/serenebuilder.log
+cat /etc/apt/sources.list >> ${WORKDIR}/serenebuilder.log
+echo "---------------------------" >> ${WORKDIR}/serenebuilder.log
 
 # GRUB設定を変更
-if [ -e /etc/bodhibuilder/grub/grub.bodhi ] ; then
+if [ -e /etc/serenebuilder/grub/grub.bodhi ] ; then
     log_msg "Found custom grub for ${DISTNAME}"
-    cp -f /etc/bodhibuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/
+    cp -f /etc/serenebuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/
     chmod 644 ${WORKDIR}/dummysys/etc/default/grub.bodhi
-    cp -f /etc/bodhibuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/grub
-    if [ -d /etc/bodhibuilder/grub/backgrounds ] ; then
-        cp -rf /etc/bodhibuilder/grub/backgrounds/ ${WORKDIR}/dummysys/etc/grub.d/
+    cp -f /etc/serenebuilder/grub/grub.bodhi ${WORKDIR}/dummysys/etc/default/grub
+    if [ -d /etc/serenebuilder/grub/backgrounds ] ; then
+        cp -rf /etc/serenebuilder/grub/backgrounds/ ${WORKDIR}/dummysys/etc/grub.d/
     fi
 fi
 
@@ -314,12 +314,12 @@ fi
 if [ "${which_desktop}" != "enlightenment" ] ; then # enlightenment & moksha use a different method for startup scripts
     if [ ! -f ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop ] ; then
         mkdir -p ${WORKDIR}/dummysys/etc/skel/.config/autostart/
-        cp -f /etc/bodhibuilder/isofiles/iso_boot_script.desktop ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop
+        cp -f /etc/serenebuilder/isofiles/iso_boot_script.desktop ${WORKDIR}/dummysys/etc/skel/.config/autostart/iso_boot_script.desktop
     fi
 fi
 
 # ブート時にrc.localを走らせる
-cp -f /etc/bodhibuilder/isofiles/rc.local ${WORKDIR}/dummysys/etc/rc.local
+cp -f /etc/serenebuilder/isofiles/rc.local ${WORKDIR}/dummysys/etc/rc.local
 chmod 755 ${WORKDIR}/dummysys/etc/rc.local
 sed -i "s/__LIVEUSER__/${LIVEUSER}/g" ${WORKDIR}/dummysys/etc/rc.local
 
@@ -452,10 +452,10 @@ fi
 if [ "${inetstatus}" -eq 0 ] ; then # internet connection detected
     log_msg "インターネットに接続できました"
     log_msg "パッケージのアップグレード中です"
-    apt-get update >>${WORKDIR}/bodhibuilder.log
+    apt-get update >>${WORKDIR}/serenebuilder.log
     log_msg "dpkg-devをインストール中です"
-    apt-get install -y -q --no-install-recommends dpkg-dev >>${WORKDIR}/bodhibuilder.log #CHARLES
-    dlpkg_all=`cat /etc/bodhibuilder/debs/amd64/00_packages.list`
+    apt-get install -y -q --no-install-recommends dpkg-dev >>${WORKDIR}/serenebuilder.log #CHARLES
+    dlpkg_all=`cat /etc/serenebuilder/debs/amd64/00_packages.list`
     dlpkgfail="0"
     log_msg "最新のパッケージがインストールされました"
     log_msg "${dlpkg_all}"
@@ -483,11 +483,11 @@ else # no internet connection detected
     log_msg "インターネット接続が検出されませんでした"
     log_msg "インストール済みのパッケージで処理を続行します"
     dlpkgfail="1" && log_msg "dlpkgfail"
-    echo "pwd -->  ${PWD}" >>${WORKDIR}/bodhibuilder.log
+    echo "pwd -->  ${PWD}" >>${WORKDIR}/serenebuilder.log
 fi
 
 log_msg "EFI関係のファイルをコピー"
-yes | cp -av /etc/bodhibuilder/uefi/* ${WORKDIR}/ISOTMP/ >>${WORKDIR}/bodhibuilder.log
+yes | cp -av /etc/serenebuilder/uefi/* ${WORKDIR}/ISOTMP/ >>${WORKDIR}/serenebuilder.log
 
 # UEFI GRUBに名前を追加
 sed -i 's/__DISTNAME__/'"${DISTNAME}"'/g' ${WORKDIR}/ISOTMP/boot/grub/grub.cfg
@@ -501,11 +501,11 @@ if [ "${dlpkgfail}" == "0" ] ; then # successful downloads
 else
     log_msg "debファイルのダウンロードに問題が発生しました"
     log_msg "新しいdebパッケージがプールへコピーされませんでした"
-    pwd >>${WORKDIR}/bodhibuilder.log
+    pwd >>${WORKDIR}/serenebuilder.log
     log_msg "古いdebパッケージをプールから削除しています"
-    yes | rm -vrf /etc/bodhibuilder/uefi/dists/pool/* >>${WORKDIR}/bodhibuilder.log
+    yes | rm -vrf /etc/serenebuilder/uefi/dists/pool/* >>${WORKDIR}/serenebuilder.log
     log_msg  "debパッケージをプールへコピーしています"
-    yes | cp -av /etc/bodhibuilder/debs/amd64/* /etc/bodhibuilder/uefi/dists/pool/ >>${WORKDIR}/bodhibuilder.log
+    yes | cp -av /etc/serenebuilder/debs/amd64/* /etc/serenebuilder/uefi/dists/pool/ >>${WORKDIR}/serenebuilder.log
 fi
 
 # Ubiquityインストール用のリポジトリ作成
@@ -517,18 +517,18 @@ fi
   # Creating Packages.gz so the repo is valid
 log_msg "${WORKDIR}/ISOTMP/dists/Packages.gzを作成します"
 cd ${WORKDIR}/ISOTMP/dists/
-dpkg-scanpackages pool /dev/null 2>>${WORKDIR}/bodhibuilder.log | gzip -9c > ./Packages.gz
+dpkg-scanpackages pool /dev/null 2>>${WORKDIR}/serenebuilder.log | gzip -9c > ./Packages.gz
 cd -
 
 log_msg "preseedファイルをコピーしています"
-cp /etc/bodhibuilder/preseed/* ${WORKDIR}/ISOTMP/preseed/
+cp /etc/serenebuilder/preseed/* ${WORKDIR}/ISOTMP/preseed/
 
 #BOOT Type is isolinux
 log_msg "LIVE環境向けにmemtest86+をコピーしています"
 cp /boot/memtest86+.bin ${WORKDIR}/ISOTMP/install/memtest
 
 # ISOLINUXについて
-if [ ! -f /etc/bodhibuilder/customisolinux/isolinux.cfg ] ; then # no custom isolinux (bb default)
+if [ ! -f /etc/serenebuilder/customisolinux/isolinux.cfg ] ; then # no custom isolinux (bb default)
     log_msg "Live環境向けにISOLINUXをインストールしています"
     find /usr/lib/ -name 'isohdpfx.bin' -exec cp -f {} ${WORKDIR}/ISOTMP/isolinux/ \;
     find /usr/lib/ -name 'isolinux.bin' -exec cp -f {} ${WORKDIR}/ISOTMP/isolinux/ \;
@@ -543,11 +543,11 @@ if [ ! -f /etc/bodhibuilder/customisolinux/isolinux.cfg ] ; then # no custom iso
         done
     fi
 
-    sed -e 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/bodhibuilder/isolinux/isolinux.cfg.vesamenu > ${WORKDIR}/ISOTMP/isolinux/isolinux.cfg
-cp /etc/bodhibuilder/isolinux/splash.png ${WORKDIR}/ISOTMP/isolinux/splash.png
+    sed -e 's/__DISTNAME__/'"${DISTNAME}"'/g' /etc/serenebuilder/isolinux/isolinux.cfg.vesamenu > ${WORKDIR}/ISOTMP/isolinux/isolinux.cfg
+cp /etc/serenebuilder/isolinux/splash.png ${WORKDIR}/ISOTMP/isolinux/splash.png
 else # custom isolinux
     log_msg "Live環境向けにISOLINUXの独自設定をインストールしています"
-    cp /etc/bodhibuilder/customisolinux/* ${WORKDIR}/ISOTMP/isolinux/ &> /dev/null
+    cp /etc/serenebuilder/customisolinux/* ${WORKDIR}/ISOTMP/isolinux/ &> /dev/null
 fi
 
 
